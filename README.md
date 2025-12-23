@@ -1,148 +1,127 @@
-# FastAPI Event Service
+# Signal Relay Service
 
-A minimal yet production‑ready FastAPI backend service for receiving, storing, and querying events via HTTP APIs.
+A lightweight signal relay service that decouples **signal generation** and **signal execution**
+across multiple trading platforms.
 
-This project is designed as a lightweight **event / signal ingestion service** and a reusable backend template with clear separation between **development, testing, and production** environments.
-
----
-
-## Features
-
-- RESTful API for event ingestion and querying
-- SQLite backend with SQLAlchemy ORM
-- Explicit environment separation: `dev` / `test` / `prod`
-- Fully tested with `pytest` (≈96% coverage)
-- Dockerized for local and server deployment
-- Persistent storage via Docker volume in production mode
+This service is designed to receive trading signals from platforms such as **JoinQuant**
+or local research scripts, normalize and persist them, and allow execution engines such as
+**QMT** to query and execute signals in a unified and controlled manner.
 
 ---
 
-## Tech Stack
+## Core Idea
 
-- Python 3.11+
-- FastAPI
-- SQLAlchemy
-- SQLite
-- pytest + pytest-cov
-- Docker
+This service is intentionally **execution-agnostic**.
 
----
-
-## API Endpoints
-
-| Method | Path      | Description            |
-|------|-----------|------------------------|
-| POST | `/events` | Create a new event     |
-| GET  | `/events` | List stored events     |
-| GET  | `/health` | Health check endpoint  |
-
----
-
-## Local Development
-
-### 1. Setup virtual environment
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-### 2. Run the service
-
-```bash
-uvicorn app.main:app --reload
-```
-
-Service will be available at:
+- Signal producers (e.g. JoinQuant strategies) only **generate signals**
+- Signal consumers (e.g. QMT execution engine) only **execute signals**
+- This service acts as a **neutral relay layer** in between
 
 ```
-http://127.0.0.1:8000
+JoinQuant / Local Strategy
+            ↓
+     Signal Relay Service
+            ↓
+              QMT
 ```
 
 ---
 
-## Running Tests
+## Signal Model
 
-All tests run against an **in‑memory SQLite database**.
+Each trading signal is explicitly described using the following dimensions:
+
+| Field              | Description |
+|-------------------|-------------|
+| `source_platform` | Signal source platform (e.g. `joinquant`, `local`) |
+| `source_strategy` | Strategy identifier within the source platform |
+| `signal_type`     | Trading intent (e.g. `open`, `close`, `rebalance`) |
+| `symbol`          | Target instrument code (e.g. `000001.SZ`) |
+| `target_position` | Target position ratio (e.g. `0.2` = 20%) |
+| `timestamp`       | Signal generation time |
+| `payload`         | Optional strategy-specific metadata |
+
+This explicit structure ensures that execution remains **deterministic, testable,
+and free of hidden logic**.
+
+---
+
+## Typical Use Cases
+
+### 1. JoinQuant → QMT
+
+- JoinQuant strategy generates signals (daily or intraday)
+- Signals are pushed to this service via HTTP API
+- QMT queries signals and executes trades accordingly
+
+### 2. Local Research / Backtest
+
+- Local Python scripts generate signals during research or backtesting
+- Signals are written to the relay service
+- Execution engine replays signals for simulation or validation
+
+---
+
+## API Overview
+
+| Method | Endpoint  | Description |
+|------|-----------|-------------|
+| POST | `/signals` | Submit trading signals |
+| GET  | `/signals` | Query pending or historical signals |
+| GET  | `/health`  | Health check |
+
+API design favors **explicitness over convenience** to avoid execution ambiguity.
+
+---
+
+## Environment Separation
+
+The service supports explicit environment separation:
+
+| Environment | Purpose |
+|------------|---------|
+| `dev`  | Local development |
+| `test` | Automated testing (in-memory database) |
+| `prod` | Production signal relay |
+
+Environment is controlled via:
 
 ```bash
-pytest
-```
-
-Run tests with coverage report:
-
-```bash
-pytest --cov=app --cov-report=term-missing
+APP_ENV=dev | test | prod
 ```
 
 ---
 
-## Docker Deployment (v0.1.0)
+## Design Principles
 
-### Build image
-
-```bash
-docker build -t fastapi-event-service:v1 .
-```
-
-### Run container (ephemeral data)
-
-```bash
-docker run --rm \
-  -p 8000:8000 \
-  -e APP_ENV=prod \
-  fastapi-event-service:v1
-```
-
-### Run container with persistent volume
-
-```bash
-docker run --rm \
-  -p 8000:8000 \
-  -e APP_ENV=prod \
-  -v $(pwd)/data:/app/data \
-  fastapi-event-service:v1
-```
-
-Database will be stored at:
-
-```
-data/prod.db
-```
-
----
-
-## Environment Configuration
-
-| Environment | APP_ENV | Database            |
-|------------|---------|---------------------|
-| Development | dev     | `data/dev.db`       |
-| Testing     | test    | In‑memory SQLite    |
-| Production  | prod    | `data/prod.db`      |
-
-Optional environment variables:
-
-- `API_TOKEN`: enable simple API token authentication (optional)
+- Decouple signal generation from execution
+- Never embed execution logic in the relay layer
+- Explicit signal semantics
+- Idempotent and replayable signals
+- Execution engines remain stateless
 
 ---
 
 ## Project Scope
 
-- Backend API service only
-- No frontend included
-- Intended as a reusable internal service template
+This project intentionally does **not**:
+
+- Execute trades
+- Connect to brokers
+- Perform risk control
+- Manage portfolios
+
+All execution responsibilities belong to downstream engines such as **QMT**.
 
 ---
 
-## Versioning
+## Status
 
-- `v0.1.0`: Local development, testing, and Docker deployment fully validated
+This project is under active development and serves as the foundation for a
+multi-platform quantitative trading workflow.
 
 ---
 
 ## License
 
 MIT
-
-<!-- PR flow verification -->
